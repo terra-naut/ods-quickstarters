@@ -20,10 +20,10 @@ ACCOUNT_ID               := $(shell aws sts get-caller-identity --query 'Account
 TF_BACKEND_S3KEY_MOD     := $(shell echo "$(TF_BACKEND_S3KEY)" | sed "s/\//-/g")
 TF_BACKEND_S3KEY_MOD     := $(shell echo "$(TF_BACKEND_S3KEY_MOD)" | sed "s/-/\//")
 
-TFSTATE_BUCKET           := $(ACCOUNT_ID)-terraform-state-bucket
-TFSTATE_KEY              := $(TF_BACKEND_S3KEY_MOD)-terraform-state
-TFSTATE_TABLE            := $(ACCOUNT_ID)-terraform-state-lock-table
-
+TF_BACKEND               := $(shell ./lib/scripts/aws/getbackendattributes.sh)
+TFSTATE_TABLE            := $(word 1, $(TF_BACKEND))
+TFSTATE_BUCKET           := $(word 2, $(TF_BACKEND))
+TFSTATE_KEY              := $(word 3, $(TF_BACKEND))
 
 .PHONY: default
 default: test
@@ -38,6 +38,7 @@ init: install-dev-deps install-test-deps
 .PHONY: create-tfvars
 # create terraform.tfvars.json
 create-tfvars:
+# Remove unnecessary line
 	terraform-docs json . | jq '.inputs | map({ (.name): .default }) | add' > terraform.tfvars.json
 
 .PHONY: prep-test
@@ -73,14 +74,11 @@ test: install-test-deps
 .PHONY: plan
 # Plan infrastructure deployment.
 plan: init-terraform
-	@$(call check_aws_credentials)
-
 	TF_IN_AUTOMATION=1 TF_WORKSPACE="$(TF_WORKSPACE)" terraform plan -input=false -out=tfplan
 
 .PHONY: deploy
 # Deploy infrastructure.
 deploy: init-terraform plan
-	@$(call check_aws_credentials)
 
 	# output aws account and user id for testing
 	aws sts  get-caller-identity --output text | tee $(INSTALL_REPORT_HOME)/aws_deploy_account.log
@@ -111,8 +109,6 @@ describe: init-terraform
 .PHONY: destroy
 # Destroy infrastructure.
 destroy: init-terraform
-	@$(call check_aws_credentials)
-
 	TF_IN_AUTOMATION=1 TF_WORKSPACE="$(TF_WORKSPACE)" terraform destroy -auto-approve
 
 .PHONY: install-dev-deps
@@ -139,12 +135,18 @@ install-python-env:
 .PHONY: init-terraform
 # Install Terraform workspace.
 init-terraform:
+	@$(call check_aws_credentials)
 
 	@echo "Bucket: ${TFSTATE_BUCKET}"
 	@echo "Key   : ${TFSTATE_KEY}"
 	@echo "Table : ${TFSTATE_TABLE}"
 
-	echo 1 | terraform init -backend-config="bucket=$(TFSTATE_BUCKET)" -backend-config="key=$(TFSTATE_KEY)" -backend-config="dynamodb_table=$(TFSTATE_TABLE)" -force-copy -input=false
+	@echo "Removing local statefile..."
+	@sh ./lib/scripts/aws/cleanstate.sh root
+
+	echo 1 | terraform init -backend-config="bucket=$(TFSTATE_BUCKET)" -backend-config="key=$(TFSTATE_KEY)" -force-copy -input=false
+# echo 1 | terraform init -no-color -backend-config="bucket=$(TFSTATE_BUCKET)" -backend-config="key=$(TFSTATE_KEY)" -backend-config="dynamodb_table=$(TFSTATE_TABLE)" -force-copy -input=false
+
 
 .PHONY: install-test-deps
 # Install testing dependencies.
@@ -159,10 +161,7 @@ cinc-auditor-test:
 .PHONY: clean
 # Reset Working directory (take care if something has deployed upfront)
 clean:
-	@rm -rf .kitchen/
-	@rm -rf test/fixtures/default/terraform.tfstate.d/
-	@rm -rf test/fixtures/default/.terraform/
-	@rm -f test/fixtures/default/.terraform.lock.hcl
+	@sh ./lib/scripts/aws/cleanstate.sh fixture
 
 .PHONY: check-config
 # Do some basic verification of configuration files and accounts
