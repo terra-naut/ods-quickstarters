@@ -16,10 +16,6 @@ TF_WORKSPACE             = default
 DEBUG                    := 0
 
 # Statefile Parameters
-ACCOUNT_ID               := $(shell aws sts get-caller-identity --query 'Account' --output text)
-TF_BACKEND_S3KEY_MOD     := $(shell echo "$(TF_BACKEND_S3KEY)" | sed "s/\//-/g")
-TF_BACKEND_S3KEY_MOD     := $(shell echo "$(TF_BACKEND_S3KEY_MOD)" | sed "s/-/\//")
-
 TF_BACKEND               := $(shell ./lib/scripts/aws/getbackendattributes.sh)
 TFSTATE_TABLE            := $(word 1, $(TF_BACKEND))
 TFSTATE_BUCKET           := $(word 2, $(TF_BACKEND))
@@ -146,7 +142,6 @@ init-terraform:
 
 	echo 1 | terraform init -backend-config="bucket=$(TFSTATE_BUCKET)" -backend-config="key=$(TFSTATE_KEY)" -force-copy -input=false
 # echo 1 | terraform init -no-color -backend-config="bucket=$(TFSTATE_BUCKET)" -backend-config="key=$(TFSTATE_KEY)" -backend-config="dynamodb_table=$(TFSTATE_TABLE)" -force-copy -input=false
-
 
 .PHONY: install-test-deps
 # Install testing dependencies.
