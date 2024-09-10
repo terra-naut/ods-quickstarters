@@ -22,40 +22,44 @@ function main() {
 
   local branch_name
   local branch_hash
-  local backend_prefix
-  local environment
+  local backend_prefix=""
 
-  # Check for AWS
+  local environment
+  local project_name
+  local component_name
+
+  # get AWS account ID
   local account_id=$(aws sts get-caller-identity --query 'Account' --output text)
 
-  # TODO: check if called from jenkins and set environment to the value stored in
-  # TF_BACKEND_S3KEY usually is derived via shared library (Jenkins run)
   TF_BACKEND_S3KEY=${TF_BACKEND_S3KEY:-}
   if [[ -n "$TF_BACKEND_S3KEY" ]]; then
-    environment="${TF_BACKEND_S3KEY##*/}"
+
+    # Ugly but we need to cut TF_BACKEND_S3KEY into pieces 
+    # to get env, project & component
+    # 047562615754/awstest/awsn/dev
+    # xxxxxxx-terraform-state-bucket/xxxxxxx/bear-awscomp-dev-terraform-state
+    environment=$(echo ${TF_BACKEND_S3KEY} | cut -d'/' -f4)
+    project_name=$(echo ${TF_BACKEND_S3KEY} | cut -d'/' -f2)
+    component_name=$(echo ${TF_BACKEND_S3KEY} | cut -d'/' -f3)    
   else
     environment="dev"
     branch_name=$(git rev-parse --abbrev-ref HEAD)
-    # branch_hash=$(echo -n "$branch_name" | sha256sum | awk '{print substr($1,1,8)}')
 
     # no prefix when on master
     # TODO: check for release branches also
     if [[ "$branch_name" != master* ]]; then
       backend_prefix="-${branch_name//\//-}"
-    else
-      backend_prefix=""
     fi
+    local repo_name=$(basename $(git rev-parse --show-toplevel))
+
+    project_name=$(echo $repo_name | cut -d'-' -f1)
+    component_name=$(echo $repo_name | cut -d'-' -f2)
   fi
 
-  # parse project and component from repository name
-  local repo_name=$(basename $(git rev-parse --show-toplevel))
-  local project_name=$(echo $repo_name | cut -d'-' -f1)
-  local component_name=$(echo $repo_name | cut -d'-' -f2)
-
   # generate backend attributes
-  local backend_table="$account_id$backend_prefix-terraform-state-lock-table"
-  local backend_bucket="$account_id-terraform-state-bucket"
-  local backend_key="$account_id/$project_name-$component_name-$environment$backend_prefix/terraform-state"
+  local backend_table="${account_id}${backend_prefix}-terraform-state-lock-table"
+  local backend_bucket="${account_id}-terraform-state-bucket"
+  local backend_key="${account_id}/${project_name}-${component_name}-${environment}${backend_prefix}-terraform-state"
 
   # Return String Array
   echo -e "$backend_table $backend_bucket $backend_key"

@@ -70,6 +70,7 @@ test: install-test-deps
 .PHONY: plan
 # Plan infrastructure deployment.
 plan: init-terraform
+	@sh ./lib/scripts/aws/getbackendattributes.sh
 	TF_IN_AUTOMATION=1 TF_WORKSPACE="$(TF_WORKSPACE)" terraform plan -input=false -out=tfplan
 
 .PHONY: deploy
